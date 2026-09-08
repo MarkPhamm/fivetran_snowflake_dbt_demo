@@ -1,0 +1,3 @@
+-- Neon already provides a database. Create this in the Neon console
+-- or locally in Postgres, then connect to it before running schema.sql.
+-- CREATE DATABASE fivetran_source;
