@@ -1,0 +1,12 @@
+# dbt
+target/
+dbt_packages/
+logs/
+profiles.yml
+*.p8
+*.pem
+*.pub
+
+# local secrets
+.env
+.venv/

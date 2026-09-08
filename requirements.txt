@@ -1,0 +1,3 @@
+# Keep in sync with [project.dependencies] in pyproject.toml.
+# uv users: prefer `uv sync` (uses uv.lock).
+dbt-snowflake>=1.9,<2
