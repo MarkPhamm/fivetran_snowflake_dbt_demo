@@ -5,17 +5,19 @@
 -- username/password auth for destination connections. Fivetran signs in with
 -- the private key; Snowflake verifies it against this public key.
 --
--- Generate the pair on your machine. Do not commit rsa_key.p8 or rsa_key.pub.
+-- Generate a pair that is NOT the dbt key. Do not commit these files.
 --
---   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
---   openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+--   mkdir -p ~/.snowflake
+--   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/fivetran_rsa_key.p8 -nocrypt
+--   openssl rsa -in ~/.snowflake/fivetran_rsa_key.p8 -pubout -out ~/.snowflake/fivetran_rsa_key.pub
+--   chmod 600 ~/.snowflake/fivetran_rsa_key.p8
 --
--- rsa_key.pub  -> paste the body into RSA_PUBLIC_KEY below (Snowflake).
--- rsa_key.p8   -> paste the full PEM (including BEGIN/END) into Fivetran.
+-- Copy the public body for Snowflake (macOS):
+--   grep -v -- '-----' ~/.snowflake/fivetran_rsa_key.pub | tr -d '\n' | pbcopy
+-- Paste that one line into RSA_PUBLIC_KEY below. Omit BEGIN/END PUBLIC KEY.
 --
--- For RSA_PUBLIC_KEY, use one line and omit:
---   -----BEGIN PUBLIC KEY-----
---   -----END PUBLIC KEY-----
+-- Copy the full private key for the Fivetran UI (includes BEGIN/END):
+--   pbcopy < ~/.snowflake/fivetran_rsa_key.p8
 --
 -- Run as SECURITYADMIN (it owns user properties). Select this whole script.
 -- =============================================================================

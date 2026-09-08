@@ -60,7 +60,7 @@ If the activation email never arrives, see [Snowflake’s trial FAQ](https://www
 
 The script is wrapped in `BEGIN` / `COMMIT` and switches roles as it goes. After it finishes, Snowsight should show **Statement executed successfully**, with the worksheet context on `SYSADMIN`, `FIVETRAN_WAREHOUSE`, and `FIVETRAN_DEMO`.
 
-![fivetran_setup.sql ran successfully in Snowsight](../assets/snowflake/setup_success.png)
+![fivetran_setup.sql ran successfully in Snowsight](../assets/snowflake/setup_user_fivetran.png)
 
 ## 2. Attach a key pair
 
@@ -69,19 +69,37 @@ The script is wrapped in `BEGIN` / `COMMIT` and switches roles as it goes. After
 On your machine (do not commit these files):
 
 ```bash
-openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
-openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
+mkdir -p ~/.snowflake
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/fivetran_rsa_key.p8 -nocrypt
+openssl rsa -in ~/.snowflake/fivetran_rsa_key.p8 -pubout -out ~/.snowflake/fivetran_rsa_key.pub
+chmod 600 ~/.snowflake/fivetran_rsa_key.p8
 ```
 
-Open `rsa_key.pub`, copy the key body only (no `BEGIN PUBLIC KEY` / `END PUBLIC KEY` lines, as a single line). Paste it into [`sql/keypair.sql`](sql/keypair.sql) and run that worksheet as `SECURITYADMIN`.
+This is a **different** pair from `dbt_rsa_key.*`. Do not reuse the dbt files for Fivetran.
 
-Keep `rsa_key.p8` for the Fivetran destination form. You will paste the private key there, including the `BEGIN` / `END` lines:
+Copy the **public key body** (no `BEGIN` / `END` lines, one line) to the clipboard, then paste it into [`sql/fivetran_keypair.sql`](sql/fivetran_keypair.sql) as `SECURITYADMIN`:
+
+```bash
+grep -v -- '-----' ~/.snowflake/fivetran_rsa_key.pub | tr -d '\n' | pbcopy
+```
+
+The Fivetran destination form wants the **full private key**, including `BEGIN` / `END`. Copy that separately:
+
+```bash
+pbcopy < ~/.snowflake/fivetran_rsa_key.p8
+```
+
+That clipboard value should look like:
 
 ```
 -----BEGIN PRIVATE KEY-----
 ...
 -----END PRIVATE KEY-----
 ```
+
+Snowsight should report **Statement executed successfully** for `ALTER USER FIVETRAN_USER SET RSA_PUBLIC_KEY`.
+
+![Public key attached to FIVETRAN_USER](../assets/snowflake/adding_key_fivetran.png)
 
 ## 3. Verify
 
@@ -100,20 +118,55 @@ You can also copy the host from Snowsight: account menu → **Account** → **Vi
 
 ## 4. Values to enter in Fivetran
 
-When you add a Snowflake destination in Fivetran:
+In Fivetran, add the Postgres source first, then a **Snowflake destination** (Destinations, not a source connector). Screenshots of the form and a passing test are in [fivetran/README.md](../fivetran/README.md#3-snowflake-destination-fivetran--snowflake).
 
 | Fivetran field | Value |
 |---|---|
-| Host | `<org>-<account>.snowflakecomputing.com` |
+| Host | `<org>-<account>.snowflakecomputing.com` (hyphen, not a dot) |
 | Port | `443` |
 | User | `FIVETRAN_USER` |
-| Auth | Key pair |
-| Private key | Contents of `rsa_key.p8` |
-| Role | `FIVETRAN_ROLE` |
 | Database | `FIVETRAN_DEMO` |
+| Auth | Key pair |
+| Private key | Full PEM from `~/.snowflake/fivetran_rsa_key.p8` (`BEGIN` / `END` included) |
+| Is private key encrypted? | Off (the `openssl` command used `-nocrypt`) |
+| Role | `FIVETRAN_ROLE` (optional in the UI; set it) |
 | Warehouse | `FIVETRAN_WAREHOUSE` |
 
-Do not reuse `FIVETRAN_USER` for dbt or interactive queries. Give dbt its own role later.
+Save & Test should pass host, warehouse, database, internal stage, and permissions. **Validate Passphrase** stays a dash because the key is unencrypted.
+
+Do not reuse `FIVETRAN_USER` for dbt. After the first Fivetran sync, run [`sql/dbt_setup.sql`](sql/dbt_setup.sql), then create a **separate** key pair for `DBT_USER` (next section).
+
+## 5. Key pair for dbt (`DBT_USER`)
+
+Snowflake does not create or download `private_key_path`. You generate the key on your laptop, attach the **public** half to `DBT_USER`, and give dbt the **private** `.p8` file. [Snowflake key-pair auth](https://docs.snowflake.com/en/user-guide/key-pair-auth).
+
+Do not reuse Fivetran’s `fivetran_rsa_key.p8`. `DBT_USER` should have its own pair.
+
+```bash
+mkdir -p ~/.snowflake
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/dbt_rsa_key.p8 -nocrypt
+openssl rsa -in ~/.snowflake/dbt_rsa_key.p8 -pubout -out ~/.snowflake/dbt_rsa_key.pub
+chmod 600 ~/.snowflake/dbt_rsa_key.p8
+```
+
+Copy the **public key body** to the clipboard (no `BEGIN` / `END` lines, one line), then paste it into [`sql/dbt_keypair.sql`](sql/dbt_keypair.sql) and run as `SECURITYADMIN`:
+
+```bash
+grep -v -- '-----' ~/.snowflake/dbt_rsa_key.pub | tr -d '\n' | pbcopy
+```
+
+![Public key attached to DBT_USER](../assets/snowflake/adding_key_dbt.png)
+
+dbt uses the private `.p8` by **path**. Do not paste the key into `profiles.yml`. Set `private_key_path` to the absolute file location (below).
+
+In `~/.dbt/profiles.yml` set the **absolute** path to the private key, for example:
+
+```yaml
+authenticator: snowflake_jwt
+private_key_path: /Users/YOUR_USER/.snowflake/dbt_rsa_key.p8
+```
+
+Then from the repo root run `dbt debug`. Do not commit `.p8` or `.pub` files.
 
 If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/docs/destinations/snowflake/setup-guide#optionalconfiguresnowflakenetworkpolicy). Trial accounts usually have none.
 
@@ -122,16 +175,22 @@ If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/d
 | File | Purpose |
 |---|---|
 | [`sql/fivetran_setup.sql`](sql/fivetran_setup.sql) | Role, service user, warehouse, database, grants |
-| [`sql/keypair.sql`](sql/keypair.sql) | `ALTER USER ... RSA_PUBLIC_KEY` |
+| [`sql/fivetran_keypair.sql`](sql/fivetran_keypair.sql) | `ALTER USER FIVETRAN_USER ... RSA_PUBLIC_KEY` |
 | [`sql/verify.sql`](sql/verify.sql) | Confirm objects and print account identifiers |
+| [`sql/dbt_setup.sql`](sql/dbt_setup.sql) | `DBT_ROLE` / `DBT_USER` plus `TRANSFORM` and `SERVE` schemas |
+| [`sql/dbt_keypair.sql`](sql/dbt_keypair.sql) | `ALTER USER DBT_USER ... RSA_PUBLIC_KEY` |
 
 ## Screenshots in `assets/snowflake`
 
 | Asset | What it shows |
 |---|---|
 | [`free_trial.png`](../assets/snowflake/free_trial.png) | Signup form at [signup.snowflake.com](https://signup.snowflake.com): **AI Data Cloud For Enterprise**, 30-day trial, $400 credits. |
-| [`setup_success.png`](../assets/snowflake/setup_success.png) | Snowsight worksheet `fivetran_setup.sql` after a successful run (`SYSADMIN` / `FIVETRAN_WAREHOUSE` / `FIVETRAN_DEMO`). |
+| [`setup_user_fivetran.png`](../assets/snowflake/setup_user_fivetran.png) | Snowsight `fivetran_setup.sql` after a successful run. |
+| [`adding_key_fivetran.png`](../assets/snowflake/adding_key_fivetran.png) | `ALTER USER FIVETRAN_USER SET RSA_PUBLIC_KEY` succeeded. |
+| [`adding_key_dbt.png`](../assets/snowflake/adding_key_dbt.png) | `ALTER USER DBT_USER SET RSA_PUBLIC_KEY` succeeded. |
+
+Fivetran destination form and passing tests: [`snowflake_destination_auth.png`](../assets/fivetran/snowflake_destination_auth.png) and [`snowflake_destination_success.png`](../assets/fivetran/snowflake_destination_success.png).
 
 ## Next step
 
-Add the Snowflake destination in Fivetran, then a Postgres connector pointed at Neon `fivetran_source`. Details are in the [project README](../README.md).
+Add the Postgres connector, then the Snowflake destination, in [fivetran/README.md](../fivetran/README.md).

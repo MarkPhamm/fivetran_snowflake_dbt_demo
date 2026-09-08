@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Confirm Fivetran destination objects
 -- =============================================================================
--- Run after fivetran_setup.sql (and keypair.sql if you already attached a key).
+-- Run after fivetran_setup.sql (and fivetran_keypair.sql if you already attached a key).
 -- Use any role that can see these objects (ACCOUNTADMIN or SYSADMIN).
 -- In Snowsight, run statement by statement or select all.
 --

@@ -21,7 +21,7 @@
 --   Snowsight only executes highlighted statements.
 --
 -- After this script
---   Attach a public key with keypair.sql, then confirm with verify.sql.
+--   Attach a public key with fivetran_keypair.sql, then confirm with verify.sql.
 -- =============================================================================
 
 -- One transaction so a mid-script failure does not leave half-created objects.
@@ -52,7 +52,7 @@ GRANT ROLE IDENTIFIER($ROLE_NAME) TO ROLE SYSADMIN;
 
 -- TYPE = SERVICE: no password, no interactive login, no MFA prompt.
 -- Snowflake is retiring password auth for this kind of user. Fivetran will
--- authenticate with the RSA key you attach in keypair.sql.
+-- authenticate with the RSA key you attach in fivetran_keypair.sql.
 -- DEFAULT_ROLE / DEFAULT_WAREHOUSE are what Fivetran uses if the destination
 -- form omits them. Still set both fields in Fivetran explicitly.
 CREATE USER IF NOT EXISTS IDENTIFIER($USER_NAME)
