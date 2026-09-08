@@ -1,0 +1,21 @@
+# Optional Fivetran Transformations for dbt Core job file.
+# Replace YOUR_POSTGRES_CONNECTION_ID with the connector ID from the Fivetran UI
+# (not the display name). Daily models run after that connector finishes a sync.
+
+jobs:
+  - name: Daily-after-landing
+    schedule:
+      type: integrated
+      integrations:
+        - YOUR_POSTGRES_CONNECTION_ID
+    steps:
+      - name: run daily models
+        command: dbt run --select +tag:daily
+
+  - name: Weekly-3am
+    schedule:
+      type: cron
+      entries: ["0 3 * * 0"]
+    steps:
+      - name: run weekly models
+        command: dbt run --select +tag:weekly

@@ -1,0 +1,49 @@
+version: 2
+
+models:
+  - name: customers_stg
+    description: >
+      Customers from the Fivetran landing replica with a display name.
+      Grain is one row per customerid.
+    columns:
+      - name: customername
+        description: firstname and lastname concatenated for reports.
+
+  - name: orders_stg
+    description: >
+      Order headers with status decoded and a channel flag.
+      Status 01/02/03 become In Progress / Completed / Cancelled.
+      ORDER_CHANNEL is Online only when storeid is 1000; this demo's stores
+      use other ids, so expect In-store for the seed data.
+    columns:
+      - name: statuscd
+        description: Original two-character status from the source.
+      - name: statusdesc
+        description: Human-readable status mapped from statuscd.
+
+  - name: orderitems_stg
+    description: >
+      Order lines plus totalprice (quantity * unitprice).
+      Grain is one row per order line.
+
+  - name: orders_fact
+    description: >
+      Orders joined to line items, rolled to one row per order header
+      (orderid + date + customer + employee + store + status).
+      Revenue is the sum of line totalprice. OrderCount is 1 at this grain
+      because the group key includes orderid.
+
+  - name: customerrevenue
+    description: >
+      Served customer mart. One row per customer with order count and
+      revenue across all of their orders.
+
+  - name: employees_stg
+    description: >
+      Employees from landing with employeename for joins into sales reports.
+      Grain is one row per employeeid.
+
+  - name: emp_weekly_sales
+    description: >
+      Served employee mart. One row per employee per week (week starting
+      Monday via date_trunc). Excludes orders with a null employeeid.

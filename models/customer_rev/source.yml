@@ -1,0 +1,20 @@
+sources:
+  - name: landing
+    description: >
+      Fivetran replica of Neon fivetran_source.l1_landing inside Snowflake.
+      dbt reads these tables only; it never queries Neon.
+    database: "{{ var('fivetran_database') }}"
+    schema: "{{ var('fivetran_schema') }}"
+    tables:
+      - name: customers
+        identifier: customers
+        description: One row per customer from the OMS source.
+      - name: orders
+        identifier: orders
+        description: One row per order header. Status is a two-character code (01/02/03).
+      - name: orderitems
+        identifier: orderitems
+        description: One row per order line. Grain is orderid + orderitemid.
+      - name: employees
+        identifier: employees
+        description: Store staff and managers. CEO has a null managerid.

@@ -1,0 +1,26 @@
+# Copy to ~/.dbt/profiles.yml (or merge into an existing file).
+# Do not commit a real profiles.yml, .p8, or .pub file.
+#
+# private_key_path is a file YOU create with openssl, not something Snowflake
+# downloads. After generating ~/.snowflake/dbt_rsa_key.p8:
+#   1. Copy the public body and register it on DBT_USER:
+#        grep -v -- '-----' ~/.snowflake/dbt_rsa_key.pub | tr -d '\n' | pbcopy
+#      then run snowflake/sql/dbt_keypair.sql
+#   2. Put the absolute path to the .p8 below (do not paste the key here)
+# See snowflake/README.md "Key pair for dbt".
+
+oms_dbt_proj:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: YOUR_ORG-YOUR_ACCOUNT
+      user: DBT_USER
+      role: DBT_ROLE
+      warehouse: FIVETRAN_WAREHOUSE
+      database: FIVETRAN_DEMO
+      schema: TRANSFORM
+      authenticator: snowflake_jwt
+      private_key_path: /Users/YOUR_USER/.snowflake/dbt_rsa_key.p8
+      threads: 4
+      client_session_keep_alive: false
