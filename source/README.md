@@ -75,6 +75,8 @@ SQL files in this folder:
 | `schema.sql` | Creates `l1_landing` and the eight OMS tables. |
 | `insert.sql` | Loads sample customers, dates, employees, products, suppliers, stores, order items, and orders. |
 | `replication.sql` | Publication and logical replication slot so Fivetran can sync incrementally. |
+| `cdc_test.sql` | Update, insert, and delete a few rows to test CDC once the pipeline works end to end. |
+| `cdc_revert.sql` | Undo `cdc_test.sql` and restore the seed values. |
 
 Identifiers are unquoted and lowercase so they match Postgres folding (`l1_landing.customers`, not `"L1_LANDING"."CUSTOMERS"`).
 
@@ -221,6 +223,7 @@ These screenshots are the expected Console state after each step:
 | [`query_success.png`](../assets/source/query_success.png) | `SELECT * FROM l1_landing.customers` returning 100 rows. |
 | [`logical_replication.png`](../assets/source/logical_replication.png) | Settings: logical replication enabled. |
 | [`source_and_publication.png`](../assets/source/source_and_publication.png) | SQL Editor after `replication.sql`. |
+| [`cdc_update_success.png`](../assets/source/cdc_update_success.png) | SQL Editor after `cdc_test.sql`: one update, three inserts, one delete, and the source-side checks. |
 | [`connection.png`](../assets/source/connection.png) | Connect modal: `fivetran_source`, `neondb_owner`, pooling off. Split this URI into Fivetran Host / User / Password / Database. |
 
 If your editor does not look like these, check the database dropdown. Running SQL against `neondb` instead of `fivetran_source` is the usual miss.

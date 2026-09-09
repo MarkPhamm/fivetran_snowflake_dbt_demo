@@ -292,6 +292,7 @@ Ingestion (`assets/fivetran/ingestion`):
 | [`snowflake_destination_success.png`](../assets/fivetran/ingestion/snowflake_destination_success.png) | Destination tests passed (host, warehouse, database, stage, permissions). |
 | [`initial_sync.png`](../assets/fivetran/ingestion/initial_sync.png) | Connection `postgres_demo` after tests: paused, waiting on **Review connection schema**. |
 | [`initial_sync_success.png`](../assets/fivetran/ingestion/initial_sync_success.png) | Historical sync done: eight OMS tables, 2,747 rows. |
+| [`cdc_sync_success.png`](../assets/fivetran/ingestion/cdc_sync_success.png) | An incremental sync during the CDC test: three tables, six rows. Compare with the historical sync above. |
 
 Transformation (`assets/fivetran/transformation`):
 
@@ -307,5 +308,7 @@ Transformation (`assets/fivetran/transformation`):
 Neon Connect (host, pooling off) lives in [`assets/source/connection.png`](../assets/source/connection.png). Snowflake object setup lives in [`assets/snowflake`](../assets/snowflake).
 
 ## Next step
+
+Prove the pipeline is live: edit rows in Neon and follow them through the sync into `SERVE`. See [Part 3 of the project README](../README.md#part-3--test-cdc-change-rows-in-neon-watch-them-reach-serve).
 
 Optional: install dbt Core locally to develop and test models before you push. See [Part 2 of the project README](../README.md#part-2--dbt-transformations-run-by-fivetran).

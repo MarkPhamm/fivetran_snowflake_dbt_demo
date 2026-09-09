@@ -8,12 +8,13 @@ This is a small end-to-end ELT tutorial. You will copy retail sample data from a
 
 Neon is only the **source** (the operational database). Snowflake is the **warehouse** (where analytics happens). Fivetran is the managed copy, and it also orchestrates dbt. dbt never talks to Neon; it only reads the Snowflake replica. The BI tool on the right is where this would go next — the tutorial stops once the reporting tables exist.
 
-The work is two parts. Finish Part 1 before you start Part 2.
+The work is two parts, then a check that the pipeline is live. Finish Part 1 before you start Part 2.
 
 | Part | What you do | When you are done |
 |---|---|---|
 | **1. Ingestion** | Put sample orders into Neon, create a Snowflake trial, and let Fivetran copy the tables | Snowflake has 100 customers in the `FIVETRAN_DEMO` landing schema |
 | **2. Transformation** | Connect this Git repo to Fivetran Transformations so Fivetran runs the dbt project on a schedule | A dbt job succeeds in Fivetran and `FIVETRAN_DEMO.SERVE` has reporting tables |
+| **3. CDC test** | Change a few rows in Neon and watch them travel to the reporting tables on their own | An edit in Postgres shows up in `FIVETRAN_DEMO.SERVE` without you running anything |
 
 **Fivetran orchestrates dbt.** The point of Part 2 is not to run `dbt run` by hand forever. You give Fivetran a read-only deploy key to this repository, and Fivetran clones it, generates its own `profiles.yml` from the Snowflake destination, and runs the jobs defined in [`deployment.yml`](deployment.yml) — one triggered by the Postgres sync, one on a cron. Installing the dbt CLI locally is optional and only for developing models before you push them.
 
@@ -231,7 +232,7 @@ The job's **Run log** holds the dbt output. Expect five models on `target='prod'
 SELECT COUNT(*) FROM FIVETRAN_DEMO.SERVE.CUSTOMERREVENUE;
 ```
 
-You now have an end-to-end pipeline: a write in Neon reaches `SERVE` without anyone running a command.
+The pipeline is now end to end. [Part 3](#part-3--test-cdc-change-rows-in-neon-watch-them-reach-serve) proves it by editing rows in Neon and following them to `SERVE`.
 
 ## 2.6 Optional — run dbt locally while you develop
 
@@ -279,11 +280,95 @@ Local runs and Fivetran runs write the same `TRANSFORM` and `SERVE` tables, and 
 
 ---
 
+# Part 3 — Test CDC: change rows in Neon, watch them reach SERVE
+
+Everything is built and connected at this point, so the last exercise is the one that proves it: edit a few rows in Neon and confirm they land in `FIVETRAN_DEMO.SERVE` without you touching Fivetran, Snowflake, or dbt.
+
+Only the ingestion half is incremental. Postgres writes your `UPDATE`, `INSERT`, and `DELETE` to the WAL, Fivetran reads the change stream through `replication_slot_01` and ships **only those rows**, and the dbt job then rebuilds the models in full, because every model is `materialized='table'`.
+
+Three scripts hold the SQL:
+
+| Script | Run it in | What it does |
+|---|---|---|
+| [`source/sql/cdc_test.sql`](source/sql/cdc_test.sql) | Neon SQL Editor, on `fivetran_source` | Renames customer 28222, inserts order `900001` with two lines worth `115.00`, deletes one `300.00` line from order `800000` |
+| [`snowflake/sql/cdc_verify.sql`](snowflake/sql/cdc_verify.sql) | Snowsight | Baseline, then the landing and reporting checks |
+| [`source/sql/cdc_revert.sql`](source/sql/cdc_revert.sql) | Neon SQL Editor | Puts the seed data back |
+
+## 3.1 Run the test
+
+1. **Baseline.** Section 1 of `cdc_verify.sql`. Customer 28222 is `Timothy Perez`, `1` order, `1509.00`. He owns exactly one order (`800143`), which keeps the arithmetic easy to check.
+2. **Change the source.** Run `cdc_test.sql` in Neon, on `fivetran_source` and not `neondb`. The delete targets an order belonging to a different customer (27613) so you can follow it separately.
+
+   ![Neon SQL Editor on fivetran_source: cdc_test.sql executed, tabs showing UPDATE 1, INSERT 1, INSERT 2, DELETE 1](assets/source/cdc_update_success.png)
+
+   The result tabs along the bottom are the per-statement receipts: `UPDATE 1`, `INSERT 1`, `INSERT 2`, `DELETE 1`, then the three checks. Five rows changed, and Postgres has written all of them to the WAL.
+
+3. **Sync.** Open the Postgres connection in Fivetran and click **Sync now**. Do not use **Re-sync**, which throws away the bookmark and reloads all 2,747 rows. Skipping the click also works; the connection syncs on its own schedule (**Setup → Sync frequency**, six hours by default).
+
+   ![Fivetran sync detail: successful sync, 3 observed tables, 6 extracted and 6 loaded rows](assets/fivetran/ingestion/cdc_sync_success.png)
+
+4. **Read the landing tables.** Section 2 of `cdc_verify.sql`.
+5. **Watch the dbt job start itself.** `Daily-after-landing` uses the integrated schedule from [2.4](#24-edit-deploymentyml), so Fivetran queues it as soon as the sync finishes — no manual trigger. If it never fires, the connection ID in [`deployment.yml`](deployment.yml) is wrong; the **Connections** column on the Transformations list shows `None`.
+6. **Confirm in SERVE.** Section 3 of `cdc_verify.sql`.
+7. **Clean up.** Run `cdc_revert.sql` and sync again. Neon is back to its seed values, but the landing tables keep the row versions they retired during the test, so `SERVE` does not return to the exact baseline. For a pristine copy, re-sync the `customers` and `orderitems` tables from the connection's schema tab — that drops and reloads those two tables — then rerun the dbt job.
+
+## 3.2 What to look for
+
+Read the sync detail before you go to Snowflake. Three tables, six rows extracted and six loaded, in about twenty seconds. That is the whole point of logical replication: Fivetran never re-read the 1,651 rows in `orderitems`, it read the change events for the rows you touched.
+
+| Table | Rows | Why |
+|---|---|---|
+| `orders` | 1 | the new order header |
+| `orderitems` | 3 | two new lines and one delete |
+| `customers` | 2 | one `UPDATE`, which is the interesting one |
+
+Two Fivetran-generated columns explain everything you see in the landing tables:
+
+| Column | What it tells you |
+|---|---|
+| `_FIVETRAN_SYNCED` | When Fivetran last wrote this row. On the rows you touched it is seconds old; every other row keeps its Part 1 timestamp. |
+| `_FIVETRAN_DELETED` | Deletes are **soft** by default. Order item 4 is still in `ORDERITEMS`, flagged `TRUE`, rather than gone. |
+
+**The update lands as two rows, not one.** Customer 28222 comes back twice, and `CUSTOMERS` holds 101 rows:
+
+| `LASTNAME` | `_FIVETRAN_DELETED` |
+|---|---|
+| `Perez-CDC` | `FALSE` |
+| `Perez` | `TRUE` |
+
+![Snowsight: customer 28222 twice, Perez-CDC not deleted and Perez flagged deleted, identical _FIVETRAN_SYNCED](assets/snowflake/cdc_soft_delete.png)
+
+That is expected, and it is why the sync reported two rows for a single `UPDATE`. These tables have no primary key, so Fivetran keys them on `_FIVETRAN_ID`, a hash of every column value. Changing `lastname` changes the hash, so Fivetran cannot recognise the row as the same one: in [soft delete mode](https://fivetran.com/docs/core-concepts/syncoverview/sync-modes/soft-delete) it inserts the new version and flags the version it replaced. Both rows carry the same `_FIVETRAN_SYNCED` because one sync wrote both. Give the source table a primary key and you get a single updated row instead.
+
+This is also why [`replication.sql`](source/sql/replication.sql) sets `REPLICA IDENTITY FULL`: the full old row in the WAL is what lets Fivetran identify which version to retire.
+
+In `SERVE.CUSTOMERREVENUE`, customer 28222 therefore comes back as **two** rows rather than one renamed row:
+
+| `CUSTOMERNAME` | `ORDERCOUNT` | `REVENUE` |
+|---|---|---|
+| `Timothy Perez` | `2` | `1624.00` |
+| `Timothy Perez-CDC` | `2` | `1624.00` |
+
+Both changes did travel: the baseline was `1` order and `1509.00`, and the new name is there. But the retired customer row is still in `customers_stg`, so the join to `orders_fact` fans out and the revenue is counted under both names.
+
+## 3.3 Nothing in this project is delete-aware
+
+The two surprises above have one cause: no model reads `_FIVETRAN_DELETED`.
+
+- Revenue for customer 27613 does **not** drop by `300.00`, because [`orderitems_stg`](models/customer_rev/orderitems_stg.sql) still sums the soft-deleted line.
+- Customer 28222 is double-counted, because [`customers_stg`](models/customer_rev/customers_stg.sql) still joins the superseded row.
+
+Both are modelling gaps, not sync failures. Add `WHERE COALESCE(_FIVETRAN_DELETED, FALSE) = FALSE` to the staging models, or switch the connection to hard deletes in Fivetran. The models here come from upstream unchanged, so the filter is left out on purpose: on a Fivetran landing zone, "the row is still there" and "the row is still current" are different questions, and only `_FIVETRAN_DELETED` answers the second.
+
+If nothing at all changed in Snowflake, the usual causes are running the edits against `neondb` instead of `fivetran_source`, or reading a landing schema whose name is not `POSTGRES_DEMO_L1_LANDING`. If Fivetran reports a slot error rather than a row count, re-check `replication_slot_01` with the queries at the bottom of [`source/sql/replication.sql`](source/sql/replication.sql).
+
+---
+
 ## Repository layout
 
 ```
 .
-├── README.md                 # This tutorial (Part 1 ingestion, Part 2 transformation)
+├── README.md                 # This tutorial (Part 1 ingestion, Part 2 transformation, Part 3 CDC test)
 ├── source/                   # Part 1: Neon / Postgres source
 ├── snowflake/                # Part 1–2: Snowflake SQL and key-pair steps
 ├── fivetran/                 # Part 1: Postgres connector + Snowflake destination

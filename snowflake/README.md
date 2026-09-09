@@ -210,6 +210,7 @@ If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/d
 | [`sql/verify.sql`](sql/verify.sql) | Confirm objects and print account identifiers |
 | [`sql/dbt_setup.sql`](sql/dbt_setup.sql) | `TRANSFORM` and `SERVE` schemas, write grants for `FIVETRAN_ROLE`, plus `DBT_ROLE` / `DBT_USER` for local runs |
 | [`sql/dbt_keypair.sql`](sql/dbt_keypair.sql) | `ALTER USER DBT_USER ... RSA_PUBLIC_KEY` |
+| [`sql/cdc_verify.sql`](sql/cdc_verify.sql) | Checks for the CDC test: baseline, landing rows and Fivetran columns, reporting tables |
 
 ## Screenshots in `assets/snowflake`
 
@@ -219,6 +220,7 @@ If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/d
 | [`setup_user_fivetran.png`](../assets/snowflake/setup_user_fivetran.png) | Snowsight `fivetran_setup.sql` after a successful run. |
 | [`adding_key_fivetran.png`](../assets/snowflake/adding_key_fivetran.png) | `ALTER USER FIVETRAN_USER SET RSA_PUBLIC_KEY` succeeded. |
 | [`adding_key_dbt.png`](../assets/snowflake/adding_key_dbt.png) | `ALTER USER DBT_USER SET RSA_PUBLIC_KEY` succeeded. |
+| [`cdc_soft_delete.png`](../assets/snowflake/cdc_soft_delete.png) | After the CDC test: customer 28222 twice in the landing table, the old version flagged `_FIVETRAN_DELETED`. |
 
 Fivetran destination form and passing tests: [`snowflake_destination_auth.png`](../assets/fivetran/ingestion/snowflake_destination_auth.png) and [`snowflake_destination_success.png`](../assets/fivetran/ingestion/snowflake_destination_success.png).
 
