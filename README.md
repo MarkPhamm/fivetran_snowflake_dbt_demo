@@ -221,7 +221,11 @@ Commit and push. The jobs show up in the Transformations tab after the next proj
 
 ## 2.5 Run a job — Part 2 checkpoint
 
-Trigger `Daily-after-landing` manually from the Transformations tab rather than waiting for the next Neon sync. When it succeeds, check Snowflake:
+Trigger `Daily-after-landing` manually from the Transformations tab rather than waiting for the next Neon sync.
+
+![Fivetran Transformations: both dbt jobs Succeeded](assets/fivetran/transformation/transformation_success.png)
+
+The job's **Run log** holds the dbt output. Expect five models on `target='prod'` — `+tag:daily` builds `customerrevenue` and its upstream models, leaving the other two to the weekly job. Then check Snowflake:
 
 ```sql
 SELECT COUNT(*) FROM FIVETRAN_DEMO.SERVE.CUSTOMERREVENUE;

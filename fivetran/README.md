@@ -260,13 +260,25 @@ The second job uses `type: cron` and needs no edit. Commit and push the change; 
 
 ### 5.5 Transformation checkpoint
 
-Run a job manually from the Transformations tab instead of waiting for the schedule. When it succeeds, Snowsight shows:
+Run a job manually from the Transformations tab instead of waiting for the schedule. Both jobs should end on **Succeeded**.
+
+![Transformations list: Daily-after-landing and Weekly-3am both Succeeded](../assets/fivetran/transformation/transformation_success.png)
+
+The **Connections** column is the quickest check that section 5.4 worked. `Daily-after-landing` shows `postgres_demo` because its integrated schedule resolved the connection ID. If it says **None**, the ID in `deployment.yml` is wrong and the job will never fire on its own. `Weekly-3am` showing **None** is correct: it runs on cron and is not tied to a connection.
+
+Open a job and read the **Run log** to see the dbt output Fivetran captured:
+
+![Run log for Daily-after-landing: five models built, completed successfully](../assets/fivetran/transformation/transformation_success_logs.png)
+
+Two details worth noticing. The header says `target='prod'` — that is Fivetran's generated profile, not the `dev` target from your local `profiles.yml`. And the run builds **five** models, not seven: `+tag:daily` pulls in `customerrevenue` plus the three staging models and `orders_fact` it depends on, while `employees_stg` and `emp_weekly_sales` belong to the weekly job.
+
+Confirm the result in Snowsight:
 
 ```sql
 SELECT COUNT(*) FROM FIVETRAN_DEMO.SERVE.CUSTOMERREVENUE;
 ```
 
-If a job fails on `Object does not exist or not authorized`, `FIVETRAN_ROLE` is missing the write grants on `TRANSFORM` / `SERVE`. Re-run [`snowflake/sql/dbt_setup.sql`](../snowflake/sql/dbt_setup.sql).
+If a job fails on `Object does not exist or not authorized`, check which object the message names. If it is `TRANSFORM` or `SERVE`, `FIVETRAN_ROLE` is missing the write grants: re-run [`snowflake/sql/dbt_setup.sql`](../snowflake/sql/dbt_setup.sql). If it is the landing schema, `vars.fivetran_schema` does not match the name Fivetran actually created (section 4) — that is a naming mismatch, not a permission problem.
 
 ## Screenshots in `assets/fivetran`
 
@@ -289,6 +301,8 @@ Transformation (`assets/fivetran/transformation`):
 | [`dbt_core_public_key.png`](../assets/fivetran/transformation/dbt_core_public_key.png) | Fivetran's generated public key and the Repository URL field. |
 | [`add_pub_key_to_github.png`](../assets/fivetran/transformation/add_pub_key_to_github.png) | GitHub **Settings → Deploy keys → Add new**, write access off. |
 | [`add_pub_key_success.png`](../assets/fivetran/transformation/add_pub_key_success.png) | The `fivetran` deploy key registered, read-only. |
+| [`transformation_success.png`](../assets/fivetran/transformation/transformation_success.png) | Both jobs **Succeeded**. `Daily-after-landing` shows its `postgres_demo` connection; the cron job shows none. |
+| [`transformation_success_logs.png`](../assets/fivetran/transformation/transformation_success_logs.png) | Run log for `Daily-after-landing`: five models on `target='prod'`, `PASS=5`. |
 
 Neon Connect (host, pooling off) lives in [`assets/source/connection.png`](../assets/source/connection.png). Snowflake object setup lives in [`assets/snowflake`](../assets/snowflake).
 
