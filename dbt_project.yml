@@ -8,10 +8,13 @@ config-version: 2
 profile: 'oms_dbt_proj'
 
 vars:
-  # Override if your Fivetran connector uses a destination schema prefix
-  # (for example neon_l1_landing) instead of source naming.
+  # Fivetran prefixes the destination schema with the connection name unless you
+  # pick source naming, and the prefix cannot be changed after the connection is
+  # created. This connection is named postgres_demo, so Neon's l1_landing lands
+  # as POSTGRES_DEMO_L1_LANDING. Confirm yours with
+  #   SHOW SCHEMAS IN DATABASE FIVETRAN_DEMO;
   fivetran_database: FIVETRAN_DEMO
-  fivetran_schema: L1_LANDING
+  fivetran_schema: POSTGRES_DEMO_L1_LANDING
 
 # These configurations specify where dbt should look for different types of files.
 # The `model-paths` config, for example, states that models in this project can be
