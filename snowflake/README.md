@@ -134,9 +134,40 @@ In Fivetran, add the Postgres source first, then a **Snowflake destination** (De
 
 Save & Test should pass host, warehouse, database, internal stage, and permissions. **Validate Passphrase** stays a dash because the key is unencrypted.
 
-Do not reuse `FIVETRAN_USER` for dbt. After the first Fivetran sync, run [`sql/dbt_setup.sql`](sql/dbt_setup.sql), then create a **separate** key pair for `DBT_USER` (next section).
+After the first Fivetran sync, run [`sql/dbt_setup.sql`](sql/dbt_setup.sql) to create the dbt schemas.
 
-## 5. Key pair for dbt (`DBT_USER`)
+## 5. Schemas for dbt, and who runs the models
+
+[`sql/dbt_setup.sql`](sql/dbt_setup.sql) creates `TRANSFORM` and `SERVE` inside `FIVETRAN_DEMO`, plus `DBT_ROLE` and `DBT_USER`. Two different identities build these models:
+
+| Who | Runs as | When |
+|---|---|---|
+| Fivetran Transformations for dbt Core | `FIVETRAN_USER` / `FIVETRAN_ROLE` | The scheduled jobs in [`deployment.yml`](../deployment.yml) |
+| Your laptop | `DBT_USER` / `DBT_ROLE` | `dbt debug` and `dbt run` while you develop |
+
+Fivetran writes its own `profiles.yml` from the destination credentials you entered in section 4, so scheduled runs reuse the destination user. That is why `dbt_setup.sql` grants `FIVETRAN_ROLE` `USAGE` plus `CREATE TABLE` / `CREATE VIEW` on `TRANSFORM` and `SERVE`. Skip that grant and the first Fivetran dbt job fails with `Object does not exist or not authorized`.
+
+`DBT_USER` exists so your laptop never holds the destination's private key.
+
+### Who owns TRANSFORM and SERVE
+
+Snowflake only lets the **owning** role replace a table. Whichever identity builds a model first owns it. `dbt_setup.sql` grants `DBT_ROLE` to `FIVETRAN_ROLE`, so Fivetran can take over models you built locally.
+
+The reverse is not automatic. If Fivetran built them first and you now want a local `dbt run`, hand the objects over once:
+
+```sql
+USE ROLE ACCOUNTADMIN;
+GRANT OWNERSHIP ON ALL TABLES IN SCHEMA FIVETRAN_DEMO.TRANSFORM TO ROLE DBT_ROLE COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON ALL VIEWS  IN SCHEMA FIVETRAN_DEMO.TRANSFORM TO ROLE DBT_ROLE COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON ALL TABLES IN SCHEMA FIVETRAN_DEMO.SERVE     TO ROLE DBT_ROLE COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON ALL VIEWS  IN SCHEMA FIVETRAN_DEMO.SERVE     TO ROLE DBT_ROLE COPY CURRENT GRANTS;
+```
+
+Dropping the two schemas and re-running `dbt_setup.sql` works too. Nothing in them is a source of truth; they are rebuilt from the landing schema.
+
+## 6. Key pair for dbt (`DBT_USER`)
+
+You only need this if you want to run dbt on your laptop. Fivetran's scheduled jobs do not use it.
 
 Snowflake does not create or download `private_key_path`. You generate the key on your laptop, attach the **public** half to `DBT_USER`, and give dbt the **private** `.p8` file. [Snowflake key-pair auth](https://docs.snowflake.com/en/user-guide/key-pair-auth).
 
@@ -159,7 +190,7 @@ grep -v -- '-----' ~/.snowflake/dbt_rsa_key.pub | tr -d '\n' | pbcopy
 
 dbt uses the private `.p8` by **path**. Do not paste the key into `profiles.yml`. Set `private_key_path` to the absolute file location (below).
 
-In `~/.dbt/profiles.yml` set the **absolute** path to the private key, for example:
+Copy [`profiles.yml.example`](../profiles.yml.example) to `profiles.yml` in the repo root (dbt picks it up there, and [`.gitignore`](../.gitignore) already excludes it) or to `~/.dbt/profiles.yml`. Either way it is a local file: Fivetran generates its own profile from the destination and never reads yours. Set the **absolute** path to the private key:
 
 ```yaml
 authenticator: snowflake_jwt
@@ -177,7 +208,7 @@ If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/d
 | [`sql/fivetran_setup.sql`](sql/fivetran_setup.sql) | Role, service user, warehouse, database, grants |
 | [`sql/fivetran_keypair.sql`](sql/fivetran_keypair.sql) | `ALTER USER FIVETRAN_USER ... RSA_PUBLIC_KEY` |
 | [`sql/verify.sql`](sql/verify.sql) | Confirm objects and print account identifiers |
-| [`sql/dbt_setup.sql`](sql/dbt_setup.sql) | `DBT_ROLE` / `DBT_USER` plus `TRANSFORM` and `SERVE` schemas |
+| [`sql/dbt_setup.sql`](sql/dbt_setup.sql) | `TRANSFORM` and `SERVE` schemas, write grants for `FIVETRAN_ROLE`, plus `DBT_ROLE` / `DBT_USER` for local runs |
 | [`sql/dbt_keypair.sql`](sql/dbt_keypair.sql) | `ALTER USER DBT_USER ... RSA_PUBLIC_KEY` |
 
 ## Screenshots in `assets/snowflake`
@@ -189,8 +220,8 @@ If the account has a network policy, allow [Fivetran IPs](https://fivetran.com/d
 | [`adding_key_fivetran.png`](../assets/snowflake/adding_key_fivetran.png) | `ALTER USER FIVETRAN_USER SET RSA_PUBLIC_KEY` succeeded. |
 | [`adding_key_dbt.png`](../assets/snowflake/adding_key_dbt.png) | `ALTER USER DBT_USER SET RSA_PUBLIC_KEY` succeeded. |
 
-Fivetran destination form and passing tests: [`snowflake_destination_auth.png`](../assets/fivetran/snowflake_destination_auth.png) and [`snowflake_destination_success.png`](../assets/fivetran/snowflake_destination_success.png).
+Fivetran destination form and passing tests: [`snowflake_destination_auth.png`](../assets/fivetran/ingestion/snowflake_destination_auth.png) and [`snowflake_destination_success.png`](../assets/fivetran/ingestion/snowflake_destination_success.png).
 
 ## Next step
 
-Add the Postgres connector, then the Snowflake destination, in [fivetran/README.md](../fivetran/README.md).
+In [fivetran/README.md](../fivetran/README.md): add the Postgres connector, then the Snowflake destination, then [connect this dbt repo under Transformations](../fivetran/README.md#5-transformations-connect-this-dbt-repo-to-fivetran).

@@ -1,6 +1,6 @@
 # CDC with WAL, publication, replication slot, pgoutput, and replica identity
 
-I found these concepts new and interesting, so I research a bit more on them with these **TLDR**:
+These concepts were new to me, so I read up on them. **TLDR**:
 * **WAL (Write-Ahead Log)** = Postgres’ history of database changes.
 * **CDC (Change Data Capture)** = reading only INSERT/UPDATE/DELETE changes instead of scanning full tables.
 * **`wal_level = logical`** = makes WAL detailed enough for tools like Fivetran to decode row-level changes.
@@ -90,7 +90,7 @@ Current Fivetran Query-Based sync uses Postgres metadata such as `xmin`, and opt
 
 ### Method B: Logical replication
 
-Instead of repeatedly examining your tables, Fivetran says:
+Instead of repeatedly examining the tables, Fivetran says:
 
 > "Give me the stream of changes Postgres already recorded."
 
@@ -155,7 +155,7 @@ It's still WAL. You're just telling Postgres:
 
 > **Record enough information so external systems can decode database changes.**
 
-That is why Neon requires you to enable logical replication at the project level rather than through your normal SQL script.
+That is why Neon requires logical replication to be enabled at the project level rather than through an ordinary SQL script.
 
 After enabling it:
 
@@ -177,7 +177,7 @@ Neon documents that enabling logical replication restarts active computes and is
 
 Probably not necessarily.
 
-Imagine your database has:
+Imagine a database with:
 
 ```text
 customers
@@ -205,7 +205,7 @@ That's where a **Publication** comes in.
 
 Think of the WAL as a giant newspaper containing database activity.
 
-The **publication** is your subscription category.
+The **publication** is the subscription category.
 
 ```text
                   PostgreSQL WAL
@@ -231,7 +231,7 @@ means:
 
 > Changes from these tables are eligible to be streamed through this publication.
 
-Your demo instead uses:
+This demo instead uses:
 
 ```sql
 CREATE PUBLICATION publication_01
@@ -473,7 +473,7 @@ Fivetran specifically requires/supports `pgoutput` for this setup. ([Fivetran][1
 
 # 10. Now the tricky one: `REPLICA IDENTITY FULL`
 
-Your demo tables don't have primary keys.
+The demo tables don't have primary keys.
 
 Consider:
 
@@ -588,7 +588,7 @@ That's why `FULL` creates **more WAL data**.
 
 You're logging more information per change.
 
-For your small OMS demo:
+For this small OMS demo:
 
 > totally reasonable.
 
@@ -749,13 +749,13 @@ publication_01
 
 it's simply looking for an object that doesn't exist.
 
-During setup, Fivetran validates both the publication and the WAL replication slot, including that the slot uses `pgoutput`. ([Fivetran][4])
+During setup, Fivetran validates both the publication and the WAL replication slot, including that the slot uses `pgoutput`. ([Fivetran][3])
 
 ---
 
 # 15. Why publication first, slot second?
 
-Your script does:
+This script does:
 
 ```sql
 CREATE PUBLICATION publication_01 ...;
@@ -788,7 +788,7 @@ So think:
 
 ---
 
-# 16. Your `replication.sql`, translated into English
+# 16. `replication.sql`, translated into English
 
 I'm guessing it roughly looks like this conceptually:
 
@@ -900,7 +900,7 @@ If somebody asks you tomorrow:
 
 > "What do I need for Postgres → Fivetran CDC?"
 
-Your answer can simply be:
+The answer can simply be:
 
 1. **`wal_level = logical`**
    Make Postgres write enough WAL information for logical CDC.
@@ -911,7 +911,7 @@ Your answer can simply be:
 3. **Replication slot + `pgoutput`**
    Tracks **how far Fivetran has consumed** the WAL and gives Fivetran the change stream.
 
-And because your demo tables don't have PKs:
+And because the demo tables don't have PKs:
 
 ```text
 REPLICA IDENTITY FULL
@@ -923,7 +923,7 @@ means:
 
 ---
 
-## The one picture I'd keep in your head
+## The one picture worth keeping in mind
 
 ```text
                       POSTGRES
@@ -954,7 +954,6 @@ means:
 
 That's the conceptual model I'd make sure you can explain before touching `replication.sql`.
 
-[1]: https://fivetran.com/docs/connectors/databases/postgresql?utm_source=chatgpt.com "PostgreSQL | Connector Overview | Fivetran Documentation"
-[2]: https://neon.com/blog/cdc-with-materialize?utm_source=chatgpt.com "Change Data Capture with Neon and Materialize - Neon"
-[3]: https://beta.fivetran.com/docs/connectors/databases/postgresql/setup-guide?utm_source=chatgpt.com "PostgreSQL | Connector Setup Guide | Fivetran Documentation"
-[4]: https://fivetran.com/docs/connectors/databases/postgresql/setup-guide?utm_source=chatgpt.com "PostgreSQL | Connector Setup Guide | Fivetran Documentation"
+[1]: https://fivetran.com/docs/connectors/databases/postgresql "PostgreSQL | Connector Overview | Fivetran Documentation"
+[2]: https://neon.com/blog/cdc-with-materialize "Change Data Capture with Neon and Materialize - Neon"
+[3]: https://fivetran.com/docs/connectors/databases/postgresql/setup-guide "PostgreSQL | Connector Setup Guide | Fivetran Documentation"

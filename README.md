@@ -2,21 +2,20 @@
 
 This is a small end-to-end ELT tutorial. You will copy retail sample data from a hosted Postgres database into Snowflake, then clean it with dbt.
 
+![Architecture: Neon Postgres to Fivetran to Snowflake plus dbt, then a BI tool](assets/architecture/architecture.png)
+
 **ELT** means Extract, Load, Transform: copy the data first, then reshape it in the warehouse. You do not need to know SQL well to follow the setup. You do need to be comfortable opening a browser, pasting SQL into a console, and running a few commands in a terminal.
+
+Neon is only the **source** (the operational database). Snowflake is the **warehouse** (where analytics happens). Fivetran is the managed copy, and it also orchestrates dbt. dbt never talks to Neon; it only reads the Snowflake replica. The BI tool on the right is where this would go next — the tutorial stops once the reporting tables exist.
 
 The work is two parts. Finish Part 1 before you start Part 2.
 
 | Part | What you do | When you are done |
 |---|---|---|
-| **1. Ingestion** | Put sample orders into Neon, create a Snowflake trial, and let Fivetran copy the tables | Snowflake has 100 customers in `FIVETRAN_DEMO.L1_LANDING` |
-| **2. dbt** | Install dbt on your laptop and build cleaned reporting tables in Snowflake | `dbt run` and `dbt test` succeed |
+| **1. Ingestion** | Put sample orders into Neon, create a Snowflake trial, and let Fivetran copy the tables | Snowflake has 100 customers in the `FIVETRAN_DEMO` landing schema |
+| **2. Transformation** | Connect this Git repo to Fivetran Transformations so Fivetran runs the dbt project on a schedule | A dbt job succeeds in Fivetran and `FIVETRAN_DEMO.SERVE` has reporting tables |
 
-```
-Part 1 — ingestion                         Part 2 — transform
-Neon (Postgres)  →  Fivetran  →  Snowflake landing  →  dbt  →  analytics tables
-```
-
-Neon is only the **source** (the operational database). Snowflake is the **warehouse** (where analytics happens). Fivetran is the managed copy. dbt never talks to Neon; it only reads the Snowflake replica.
+**Fivetran orchestrates dbt.** The point of Part 2 is not to run `dbt run` by hand forever. You give Fivetran a read-only deploy key to this repository, and Fivetran clones it, generates its own `profiles.yml` from the Snowflake destination, and runs the jobs defined in [`deployment.yml`](deployment.yml) — one triggered by the Postgres sync, one on a cron. Installing the dbt CLI locally is optional and only for developing models before you push them.
 
 Detailed click-paths and screenshots live in the linked guides. This file is the path through the tutorial.
 
@@ -28,8 +27,9 @@ All of this runs on free tiers. Create the accounts when the steps ask for them.
 |---|---|---|
 | [Neon](https://console.neon.tech/signup) | Free serverless Postgres. Holds the sample store data. | Free account |
 | [Snowflake](https://signup.snowflake.com/) | Free 30-day trial warehouse. Destination for Fivetran and dbt. | Walkthrough in [snowflake/README.md](snowflake/README.md) |
-| [Fivetran](https://fivetran.com/signup) | Free account. Copies Neon into Snowflake. | Free account |
-| dbt Core | Free CLI. You install it in Part 2 into a project folder, not globally. | Python 3.10–3.13 (3.12 is the default in [`.python-version`](.python-version)) |
+| [Fivetran](https://fivetran.com/signup) | Free account. Copies Neon into Snowflake, then runs this dbt project. | Free account |
+| GitHub | Hosts this repo. Fivetran clones it over SSH, so you need to add a deploy key. | Fork or push your own copy |
+| dbt Core | Free CLI. **Optional**, for local development only. Fivetran installs its own dbt for scheduled runs. | Python 3.10–3.13 (3.12 is the default in [`.python-version`](.python-version)) |
 
 ---
 
@@ -123,27 +123,30 @@ In Fivetran, the connection stays **Paused** until you pick tables.
 In Snowflake (Snowsight), run:
 
 ```sql
-SELECT COUNT(*) FROM FIVETRAN_DEMO.L1_LANDING.CUSTOMERS;
+SHOW SCHEMAS IN DATABASE FIVETRAN_DEMO;
+SELECT COUNT(*) FROM FIVETRAN_DEMO.POSTGRES_DEMO_L1_LANDING.CUSTOMERS;
 ```
 
-You want **100**. If the schema has a prefix (for example `POSTGRES_DEMO_L1_LANDING`), note that name. You will tell dbt about it in Part 2.
+You want **100**. Write down the landing schema name exactly as `SHOW SCHEMAS` reports it. By default Fivetran prefixes it with the connection name, so a connection called `postgres_demo` produces `POSTGRES_DEMO_L1_LANDING` rather than `L1_LANDING`, and Part 2 has to be told which one you got.
+
+Also note the connection's **ID** while you are here: the two-word system name Fivetran gave it, visible in the connection's Setup tab and in the browser URL. Part 2 needs it to schedule dbt off this connection.
 
 Part 1 is done. The warehouse now has a landing replica. Next you transform it.
 
 ---
 
-# Part 2 — dbt: turn the replica into reporting tables
+# Part 2 — dbt transformations, run by Fivetran
 
-Goal: dbt reads `FIVETRAN_DEMO.L1_LANDING` and writes cleaned tables into `TRANSFORM` and `SERVE`.
+Goal: Fivetran clones this repository, runs the dbt project against the landing schema, and writes cleaned tables into `TRANSFORM` and `SERVE` on a schedule.
 
-**dbt** (data build tool) is a command-line program. You write SQL files; dbt runs them in Snowflake in the right order, tests the results, and documents the models. It does not extract data. If Part 1 is incomplete, `dbt run` will fail because the landing tables are missing.
+**dbt** (data build tool) turns SQL files into tables: it works out the dependency order, runs the models in Snowflake, and tests the results. It does not extract data, so if Part 1 is incomplete every model fails on a missing landing table.
 
-You do not need dbt Cloud. Install dbt Core into a virtual environment in **this repo** (`.venv/`). Do not `pip install dbt-snowflake` into your system Python.
+**Fivetran Transformations for dbt Core** is what actually runs it. Fivetran holds a read-only deploy key to your GitHub repo, prepares a dbt environment with a `profiles.yml` built from your Snowflake destination, and executes the jobs described in [`deployment.yml`](deployment.yml). There is no dbt Cloud account and no server of your own.
 
-Models come from [sleekdata/oms_fivetran_transforms](https://github.com/sleekdata/oms_fivetran_transforms). The dbt project lives at the **repo root** (`dbt_project.yml`, `models/`).
+Models come from [sleekdata/oms_fivetran_transforms](https://github.com/sleekdata/oms_fivetran_transforms). The dbt project lives at the **repo root** (`dbt_project.yml`, `models/`), which is where Fivetran looks by default.
 
 ```
-FIVETRAN_DEMO.L1_LANDING     Fivetran-synced OMS tables (Part 1)
+FIVETRAN_DEMO.POSTGRES_DEMO_L1_LANDING   Fivetran-synced OMS tables (Part 1)
         |
         v
 FIVETRAN_DEMO.TRANSFORM      staging + orders_fact
@@ -164,82 +167,111 @@ FIVETRAN_DEMO.SERVE          customerrevenue, emp_weekly_sales
 
 `orders_stg` treats `StoreID = 1000` as Online. The Neon seed stores use other ids, so these seed rows classify as In-store.
 
-## 2.1 Create a dbt user in Snowflake
+## 2.1 Create the dbt schemas in Snowflake
 
-Fivetran’s user must not run your transforms. A separate `DBT_USER` keeps keys and privileges apart.
+1. Confirm landing exists: `SELECT COUNT(*) FROM FIVETRAN_DEMO.POSTGRES_DEMO_L1_LANDING.CUSTOMERS`.
+2. In Snowsight, run [`snowflake/sql/dbt_setup.sql`](snowflake/sql/dbt_setup.sql). It creates schemas `TRANSFORM` and `SERVE`, grants `FIVETRAN_ROLE` write access to both, and creates `DBT_ROLE` / `DBT_USER` for optional local runs.
 
-1. Confirm landing exists: `SELECT COUNT(*) FROM FIVETRAN_DEMO.L1_LANDING.CUSTOMERS`.
-2. In Snowsight, run [`snowflake/sql/dbt_setup.sql`](snowflake/sql/dbt_setup.sql). That creates `DBT_ROLE`, `DBT_USER`, and schemas `TRANSFORM` and `SERVE`.
+The `FIVETRAN_ROLE` grants matter: Fivetran runs your models with the **destination** credentials, so the scheduled jobs authenticate as `FIVETRAN_USER`, not `DBT_USER`. Without those grants the first dbt job fails on `Object does not exist or not authorized`.
 
-Full notes: [snowflake/README.md](snowflake/README.md#5-key-pair-for-dbt-dbt_user).
+Full notes, including who ends up owning the tables: [snowflake/README.md](snowflake/README.md#5-schemas-for-dbt-and-who-runs-the-models).
 
-## 2.2 Make a key pair for dbt
+## 2.2 Put this repo on your own GitHub
 
-Generate this pair **on your laptop**. It must be a **different** pair from Fivetran’s `fivetran_rsa_key.*`.
+Fivetran clones over SSH and needs a repository you can add a **deploy key** to. Fork this repo or push your copy to a new one. Keep `dbt_project.yml` at the root.
 
-```bash
-mkdir -p ~/.snowflake
-openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/dbt_rsa_key.p8 -nocrypt
-openssl rsa -in ~/.snowflake/dbt_rsa_key.p8 -pubout -out ~/.snowflake/dbt_rsa_key.pub
-chmod 600 ~/.snowflake/dbt_rsa_key.p8
+Nothing secret goes in the repo. [`.gitignore`](.gitignore) already excludes `profiles.yml`, `*.p8`, and `*.pub`.
+
+## 2.3 Connect the project in Fivetran Transformations
+
+**Transformations → Add transformation → your Snowflake destination → dbt Core → Connect project.**
+
+Fivetran shows a public key. Add it in GitHub under **Settings → Deploy keys**, read-only. Then give Fivetran the **SSH** repository URL (`git@github.com:YOUR_USER/fivetran_snowflake_dbt_demo.git`), default schema `TRANSFORM`, and a dbt Core version. Save & Test.
+
+Full click-path and screenshots: [fivetran/README.md](fivetran/README.md#5-transformations-connect-this-dbt-repo-to-fivetran).
+
+Before you push, make `vars.fivetran_schema` in [`dbt_project.yml`](dbt_project.yml) match the landing schema you noted in Part 1. It ships as `POSTGRES_DEMO_L1_LANDING`, the name a connection called `postgres_demo` produces. Get this wrong and every model fails with `Schema 'FIVETRAN_DEMO.L1_LANDING' does not exist or not authorized` — a naming mismatch, not a grant problem.
+
+## 2.4 Edit `deployment.yml`
+
+[`deployment.yml`](deployment.yml) in the repo root is where the jobs live. Fivetran re-reads it on every project sync and creates or updates the jobs it finds, so schedules are version controlled alongside the models.
+
+You must change one value: replace the placeholder connection ID under the integrated schedule with your own Postgres **connection ID** (Fivetran's two-word system name for the connection, not the display name `postgres_demo`).
+
+```yaml
+jobs:
+  - name: Daily-after-landing
+    schedule:
+      type: integrated
+      integrations:
+        - verdure_rephrase # replace with your postgres connection id
+    steps:
+      - name: run daily models
+        command: dbt run --select +tag:daily
 ```
 
-Copy the **public** key body (no `BEGIN` / `END` lines, one line), paste it into [`snowflake/sql/dbt_keypair.sql`](snowflake/sql/dbt_keypair.sql), and run that script as `SECURITYADMIN`:
+| Job | Trigger | Command |
+|---|---|---|
+| `Daily-after-landing` | Integrated: fires when that Postgres connection finishes a sync | `dbt run --select +tag:daily` |
+| `Weekly-3am` | Cron `0 3 * * 0` | `dbt run --select +tag:weekly` |
 
-```bash
-grep -v -- '-----' ~/.snowflake/dbt_rsa_key.pub | tr -d '\n' | pbcopy
+The tags come from [`dbt_project.yml`](dbt_project.yml). `+tag:daily` selects `customerrevenue` plus its upstream models, so the staging models and `orders_fact` rebuild in the same run.
+
+Commit and push. The jobs show up in the Transformations tab after the next project sync.
+
+## 2.5 Run a job — Part 2 checkpoint
+
+Trigger `Daily-after-landing` manually from the Transformations tab rather than waiting for the next Neon sync. When it succeeds, check Snowflake:
+
+```sql
+SELECT COUNT(*) FROM FIVETRAN_DEMO.SERVE.CUSTOMERREVENUE;
 ```
 
-dbt uses the private `.p8` **by file path**. You will not paste the private key into a website.
+You now have an end-to-end pipeline: a write in Neon reaches `SERVE` without anyone running a command.
 
-## 2.3 Install dbt in this repo
+## 2.6 Optional — run dbt locally while you develop
 
-Supported Python: **3.10–3.13**. [`.python-version`](.python-version) is **3.12**. Dependencies are locked in [`uv.lock`](uv.lock) and [`requirements.txt`](requirements.txt). Create `.venv` here (it is gitignored). Activate it in every new terminal before you run `dbt`.
+Only needed if you want to test model changes before pushing them. Scheduled builds never use this setup.
 
-With [uv](https://docs.astral.sh/uv/) (preferred):
+1. **Key pair for `DBT_USER`.** A different pair from Fivetran's `fivetran_rsa_key.*`:
 
-```bash
-uv sync
-source .venv/bin/activate
-```
+   ```bash
+   mkdir -p ~/.snowflake
+   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out ~/.snowflake/dbt_rsa_key.p8 -nocrypt
+   openssl rsa -in ~/.snowflake/dbt_rsa_key.p8 -pubout -out ~/.snowflake/dbt_rsa_key.pub
+   chmod 600 ~/.snowflake/dbt_rsa_key.p8
+   ```
 
-`uv sync` will install CPython 3.12 if it is missing.
+   Copy the public key body (no `BEGIN` / `END` lines, one line) into [`snowflake/sql/dbt_keypair.sql`](snowflake/sql/dbt_keypair.sql) and run it as `SECURITYADMIN`:
 
-Or with the stdlib venv:
+   ```bash
+   grep -v -- '-----' ~/.snowflake/dbt_rsa_key.pub | tr -d '\n' | pbcopy
+   ```
 
-```bash
-python3.12 -m venv .venv   # or python3.10 / python3.11 / python3.13
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+2. **Install dbt Core in this repo**, not system-wide. Supported Python is 3.10–3.13; [`.python-version`](.python-version) is 3.12. Dependencies are locked in [`uv.lock`](uv.lock) and [`requirements.txt`](requirements.txt).
 
-On Windows use `.venv\Scripts\activate`. `which dbt` should end in `.venv/bin/dbt`.
+   ```bash
+   uv sync
+   source .venv/bin/activate
+   ```
 
-## 2.4 Point dbt at Snowflake
+   Or with the stdlib venv: `python3.12 -m venv .venv`, activate, then `python -m pip install -r requirements.txt`. On Windows use `.venv\Scripts\activate`. `which dbt` should end in `.venv/bin/dbt`.
 
-Copy [`profiles.yml.example`](profiles.yml.example) to `~/.dbt/profiles.yml`. Set:
+3. **Point dbt at Snowflake.** Copy [`profiles.yml.example`](profiles.yml.example) to `profiles.yml` in the repo root (gitignored) or to `~/.dbt/profiles.yml`. Set `account` to your `<ORG>-<ACCOUNT>` and `private_key_path` to an absolute path such as `/Users/YOUR_USER/.snowflake/dbt_rsa_key.p8`. The profile name must stay `oms_dbt_proj`.
 
-- `account` to your Snowflake `<ORG>-<ACCOUNT>` (same hyphenated host, without `.snowflakecomputing.com`)
-- `private_key_path` to an **absolute** path, for example `/Users/YOUR_USER/.snowflake/dbt_rsa_key.p8`
+4. **Check the connection**, then build:
 
-The profile name must stay `oms_dbt_proj` (that is what [`dbt_project.yml`](dbt_project.yml) expects). Do not commit `profiles.yml`, `.p8`, or `.pub` files.
+   ```bash
+   dbt debug
+   dbt run
+   dbt test
+   ```
 
-If Fivetran created a prefixed schema, change `vars.fivetran_schema` in `dbt_project.yml` or run with `--vars '{fivetran_schema: YOUR_SCHEMA}'`.
+![dbt debug: all checks passed, connected as DBT_USER on FIVETRAN_DEMO](assets/dbt/dbt_debug_success.png)
 
-## 2.5 Run dbt — Part 2 checkpoint
+`dbt debug` should end in `All checks passed!` with `user: DBT_USER` and `role: DBT_ROLE`. `dbt run` builds all seven models. [`models/schema.yml`](models/schema.yml) currently carries descriptions but no tests, so `dbt test` is a no-op until you add some.
 
-From the **repository root**, with `.venv` activated:
-
-```bash
-dbt debug
-dbt run
-dbt test
-```
-
-`dbt debug` must connect as `DBT_USER`. `dbt run` builds the seven models. `dbt test` checks the YAML tests in [`models/schema.yml`](models/schema.yml).
-
-In Snowflake you should now see tables in `FIVETRAN_DEMO.TRANSFORM` and `FIVETRAN_DEMO.SERVE`.
+Local runs and Fivetran runs write the same `TRANSFORM` and `SERVE` tables, and Snowflake only lets the owning role replace a table. If a local run fails on ownership after Fivetran has built the models, see [snowflake/README.md](snowflake/README.md#who-owns-transform-and-serve).
 
 ---
 
@@ -247,15 +279,24 @@ In Snowflake you should now see tables in `FIVETRAN_DEMO.TRANSFORM` and `FIVETRA
 
 ```
 .
-├── README.md                 # This tutorial (Part 1 ingestion, Part 2 dbt)
+├── README.md                 # This tutorial (Part 1 ingestion, Part 2 transformation)
 ├── source/                   # Part 1: Neon / Postgres source
 ├── snowflake/                # Part 1–2: Snowflake SQL and key-pair steps
-├── fivetran/                 # Part 1: Fivetran destination + Postgres connector
-├── dbt_project.yml           # Part 2: dbt project
-├── models/                   # Part 2: SQL models
-├── profiles.yml.example      # Part 2: copy to ~/.dbt/profiles.yml
-├── pyproject.toml            # Part 2: Python 3.10–3.13 + dbt-snowflake
-└── assets/                   # Screenshots used by the guides
+├── fivetran/                 # Part 1: Postgres connector + Snowflake destination
+│                             # Part 2: Transformations for dbt Core
+├── dbt_project.yml           # dbt project. Fivetran expects it at the repo root
+├── deployment.yml            # Part 2: Fivetran dbt job definitions and schedules
+├── models/                   # SQL models
+├── macros/                   # generate_schema_name override (no schema prefixing)
+├── profiles.yml.example      # Local development only. Fivetran writes its own
+├── pyproject.toml            # Local development only: Python 3.10–3.13 + dbt-snowflake
+└── assets/                   # Diagrams and screenshots used by the guides
+    ├── architecture/         # The pipeline diagram at the top of this file
+    ├── source/               # Neon
+    ├── snowflake/            # Snowsight
+    ├── fivetran/ingestion/   # Connector, destination, first sync
+    ├── fivetran/transformation/  # dbt Core project and deploy key
+    └── dbt/                  # Local dbt CLI
 ```
 
 ## License and data

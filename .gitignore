@@ -3,6 +3,7 @@ target/
 dbt_packages/
 logs/
 profiles.yml
+.user.yml
 *.p8
 *.pem
 *.pub
@@ -10,3 +11,6 @@ profiles.yml
 # local secrets
 .env
 .venv/
+
+# editor
+.cursor/

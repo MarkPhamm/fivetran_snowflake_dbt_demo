@@ -1,9 +1,15 @@
 -- =============================================================================
--- dbt role, user, and write schemas on FIVETRAN_DEMO
+-- dbt schemas on FIVETRAN_DEMO, plus a local-development role and user
 -- =============================================================================
--- FIVETRAN_USER is for Fivetran only. dbt gets its own service user so
--- transforms cannot create Fivetran-owned objects, and you can rotate keys
--- independently.
+-- Two things run this dbt project:
+--
+--   1. Fivetran Transformations for dbt Core (the scheduled builds). Fivetran
+--      generates its own profiles.yml from the DESTINATION credentials, so the
+--      scheduled models are built by FIVETRAN_USER / FIVETRAN_ROLE. That role
+--      therefore needs write access on TRANSFORM and SERVE, granted below.
+--   2. Your laptop, for development (dbt debug / dbt run before you push).
+--      That uses DBT_USER so you are not handing your dev machine the
+--      destination's key.
 --
 -- Creates:
 --   DBT_ROLE
@@ -62,6 +68,23 @@ GRANT SELECT ON ALL TABLES IN DATABASE FIVETRAN_DEMO TO ROLE DBT_ROLE;
 GRANT SELECT ON FUTURE TABLES IN DATABASE FIVETRAN_DEMO TO ROLE DBT_ROLE;
 GRANT SELECT ON ALL VIEWS IN DATABASE FIVETRAN_DEMO TO ROLE DBT_ROLE;
 GRANT SELECT ON FUTURE VIEWS IN DATABASE FIVETRAN_DEMO TO ROLE DBT_ROLE;
+
+-- Scheduled runs come from Fivetran Transformations, which authenticates as the
+-- destination user. Without these, a dbt job fails on the first model with
+-- "Object does not exist or not authorized" on TRANSFORM.
+GRANT USAGE ON SCHEMA TRANSFORM TO ROLE FIVETRAN_ROLE;
+GRANT USAGE ON SCHEMA SERVE TO ROLE FIVETRAN_ROLE;
+GRANT CREATE TABLE, CREATE VIEW ON SCHEMA TRANSFORM TO ROLE FIVETRAN_ROLE;
+GRANT CREATE TABLE, CREATE VIEW ON SCHEMA SERVE TO ROLE FIVETRAN_ROLE;
+
+USE ROLE SECURITYADMIN;
+
+-- A table can only be replaced by the role that owns it. If you built the
+-- models locally first, DBT_ROLE owns them and Fivetran cannot overwrite them.
+-- Inheriting DBT_ROLE lets Fivetran take over those objects. For the reverse
+-- case (Fivetran ran first, now you want to build locally) see
+-- snowflake/README.md "Who owns TRANSFORM and SERVE".
+GRANT ROLE DBT_ROLE TO ROLE FIVETRAN_ROLE;
 
 USE ROLE SYSADMIN;
 
