@@ -1,13 +1,19 @@
-# Optional Fivetran Transformations for dbt Core job file.
-# Replace YOUR_POSTGRES_CONNECTION_ID with the connector ID from the Fivetran UI
-# (not the display name). Daily models run after that connector finishes a sync.
+# Fivetran Transformations for dbt Core job definitions.
+#
+# Fivetran clones this repo over SSH and re-parses this file on every project
+# sync, creating or updating the jobs it finds. See fivetran/README.md section 5.
+#
+# Before the first run: replace the connection id below with your own. It is the
+# two-word system name Fivetran gave the Postgres connection (Connections ->
+# your connection -> Setup), not the display name. Daily models then run as soon
+# as that connection finishes a sync.
 
 jobs:
   - name: Daily-after-landing
     schedule:
       type: integrated
       integrations:
-        - YOUR_POSTGRES_CONNECTION_ID
+        - verdure_rephrase # replace with your postgres connection id
     steps:
       - name: run daily models
         command: dbt run --select +tag:daily
