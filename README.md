@@ -2,7 +2,11 @@
 
 This is a small end-to-end ELT tutorial. You will copy retail sample data from a hosted Postgres database into Snowflake, then clean it with dbt.
 
-![The pipeline end to end: eight tables and 2,747 rows loaded from Neon into Snowflake, Fivetran running dbt Core, and a five-row CDC edit reaching the reporting tables on its own](assets/video/brag.gif)
+<img
+  src="assets/video/brag.gif"
+  alt="The pipeline end to end: eight tables and 2,747 rows loaded from Neon into Snowflake, Fivetran running dbt Core, and a five-row CDC edit reaching the reporting tables on its own"
+  width="100%"
+/>
 
 *Twenty-five seconds of the finished thing: [Part 1](#part-1--ingestion-copy-neon-into-snowflake) loads eight tables, [Part 2](#part-2--dbt-transformations-run-by-fivetran) lets Fivetran run the dbt project, and [Part 3](#part-3--test-cdc-change-rows-in-neon-watch-them-reach-serve) changes five rows in Postgres and follows them to `SERVE` without touching anything.*
 
