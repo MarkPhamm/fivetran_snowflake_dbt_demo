@@ -14,3 +14,6 @@ profiles.yml
 
 # editor
 .cursor/
+
+# brag video working directory (composition, score, renders)
+brag-output/
